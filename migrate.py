@@ -1,3 +1,27 @@
+"""
+migrate.
+
+Usage:
+migrate up [<target>] [--skip-preview] [--db=<url>]
+migrate down [<target>] [--skip-preview] [--db=<url>]
+migrate apply <files>... [--db=<url>]
+migrate make <slug> [--db=<url>]
+migrate list [--db=<url>]
+migrate status [--db=<url>]
+migrate rebase <slug> [--db=<url>]
+migrate wipe <schema> [--db=<url>]
+migrate install [--db=<url>]
+migrate -h | --help
+migrate --version
+
+Options:
+-h --help          Show this screen.
+--version          Show version.
+-s --skip-preview  Skip the preview.
+--db=<url>         Specify DB url [default: DATABASE_URL].
+"""
+from docopt import docopt
+
 import argparse
 import glob
 import os
@@ -8,14 +32,18 @@ from functools import partial
 from sqlalchemy import create_engine
 from sqlalchemy import DDL
 
-NOT_EXIST_MSG = "relation \"public.database_versions\" does not exist"
-
-# # TODO: compartementalize
-# DB_URL = os.environ["DATABASE_URL"]
-# engine = create_engine(DB_URL)
+NOT_EXIST_MSG = "relation \"public.migrations\" does not exist"
 
 
-class NoDatabaseVersionsTable(Exception):
+def get_engine(args):
+    url = args["--db"]
+    if url == "DATABASE_URL":
+        url = os.environ["DATABASE_URL"]
+    engine = create_engine(url)
+    return engine
+
+
+class NoMigrationsTable(Exception):
     pass
 
 
@@ -70,17 +98,17 @@ def read_sqls(filename):
     return up_sql, down_sql
 
 
-def _execute_migration(version, filename, migration, down):
+def _execute_migration(engine, version, filename, migration, down):
     assert filename.startswith(str(version) + ".")
 
     with engine.begin() as conn:
         try:
             rs = conn.execute("""SELECT MAX(version) AS cur_ver
-                                 FROM public.database_versions
+                                 FROM public.migrations
                               """)
         except somesqlalchemy.Error as ex:
             if NOT_EXIST_MSG in str(ex):
-                raise NoDatabaseVersionsTable
+                raise NoMigrationsTable
             else:
                 raise
         res = list(rs)[0]
@@ -101,13 +129,13 @@ def _execute_migration(version, filename, migration, down):
 
         conn.execute(DDL(migration))
         if down:
-            conn.execute("""DELETE FROM public.database_versions
+            conn.execute("""DELETE FROM public.migrations
                             WHERE version = %s
                          """,
                          version)
         else:
             up_sql, down_sql = read_sqls(filename)
-            conn.execute("""INSERT INTO public.database_versions
+            conn.execute("""INSERT INTO public.migrations
                                 (version, tag, up_sql, down_sql)
                             VALUES (%s, %s, %s, %s)
                          """,
@@ -131,20 +159,20 @@ def get_max_target():
     return max(versions)
 
 
-def get_current_version():
+def get_current_version(engine):
     with engine.begin() as conn:
         rs = conn.execute("""SELECT MAX(version) AS version
-                             FROM database_versions
+                             FROM migrations
                           """)
         row = list(rs)[0]
         return row.version or 0
 
 
-def _run_migration(version, down):
+def _run_migration(engine, version, down):
     path = _find_migration(version, kind(down))
     migration = open(path).read()
     filename = os.path.basename(path)
-    return _execute_migration(version, filename, migration, down)
+    return _execute_migration(engine, version, filename, migration, down)
 
 
 def _generate_migration_list(current_version, max_version, target_version,
@@ -161,7 +189,7 @@ def _generate_migration_list(current_version, max_version, target_version,
                                                          down))
 
 
-def _get_migration_list(target_version, down=False):
+def _get_migration_list(engine, target_version, down=False):
     max_version = get_max_target()
 
     if target_version:
@@ -173,7 +201,7 @@ def _get_migration_list(target_version, down=False):
             target_version = max_version
         print "SELECTED VERSION:", target_version
 
-    current_version = get_current_version()
+    current_version = get_current_version(engine)
 
     if down:
         prev_version = current_version - 1
@@ -197,9 +225,9 @@ def _get_migration_list(target_version, down=False):
     return migration_list
 
 
-def _perform_migrations(migration_list, down):
+def _perform_migrations(engine, migration_list, down):
     for version in migration_list:
-        _run_migration(version, down)
+        _run_migration(engine, version, down)
 
 
 def kind(down):
@@ -216,28 +244,33 @@ def preview(migration_list, down):
     return answer and answer.lower().strip() in ("y", "yes")
 
 
-def _command_migrate(target_version, down, do_preview):
-    migration_list = _get_migration_list(target_version, down)
+def _command_migrate(engine, target_version, down, do_preview):
+    migration_list = _get_migration_list(engine, target_version, down)
     if do_preview:
         if not preview(migration_list, down):
             print "Action canceled."
             return
-    _perform_migrations(migration_list, down)
+    _perform_migrations(engine, migration_list, down)
 
 
 def command_up(args):
-    target_version = args.target
-    _command_migrate(target_version, False, not args.skip_preview)
+    target_version = args["<target>"]
+    skip_preview = args.get("--skip-preview")
+    engine = get_engine(args)
+    _command_migrate(engine, target_version, False, not skip_preview)
 
 
 def command_down(args):
-    target_version = args.target
-    _command_migrate(target_version, True, not args.skip_preview)
+    target_version = args["<target>"]
+    skip_preview = args.get("--skip-preview")
+    engine = get_engine(args)
+    _command_migrate(engine, target_version, True, not skip_preview)
 
 
 def command_install(args):
+    engine = get_engine(args)
     with engine.begin() as conn:
-        conn.execute("""CREATE TABLE public.database_versions (
+        conn.execute("""CREATE TABLE public.migrations (
                             version INTEGER,
                             PRIMARY KEY (version),
                             tag TEXT
@@ -251,8 +284,9 @@ def command_install(args):
 
 
 def command_list(args):
+    engine = get_engine(args)
     with engine.begin() as conn:
-        sql = "SELECT * FROM public.database_versions"
+        sql = "SELECT * FROM public.migrations"
         versions = list(conn.execute(sql))
     if versions:
         print "Showing %d installed migration(s)." % len(versions)
@@ -263,7 +297,7 @@ def command_list(args):
 
 
 def command_wipe(args):
-    schema = args.schema
+    schema = args["<schema>"]
     print "WARNING! GOING TO WIPE SCHEMA '%s' in DB: %s" % (schema, DB_URL)
     if "y" == (raw_input("Ok? [y/N] ") or "").strip().lower():
         with engine.begin() as conn:
@@ -276,7 +310,7 @@ def command_wipe(args):
 def command_status(args):
     try:
         with engine.begin() as conn:
-            sql = "SELECT * FROM database_versions ORDER BY version"
+            sql = "SELECT * FROM migrations ORDER BY version"
             versions = list(conn.execute(sql))
     except Exception:
         print "Database versions table not installed."
@@ -288,7 +322,7 @@ def command_status(args):
 
 
 def command_apply(args):
-    fns = args.files
+    fns = args["<files>..."]
     for fn in fns:
         if not os.path.exists(fn):
             raise Exception("Specified file does not exist: %s" % fn)
@@ -318,7 +352,7 @@ def validate_slug(slug):
 
 
 def command_make(args):
-    slug = args.slug
+    slug = args["<slug>"]
     if not validate_slug(slug):
         print "Invalid slug, '%s', must be in-this-format." % slug
         return
@@ -332,8 +366,8 @@ def command_make(args):
         f.write(sql)
 
 
-def _ensure_db_no_higher_than(version):
-    current_version = get_current_version()
+def _ensure_db_no_higher_than(engine, version):
+    current_version = get_current_version(engine)
     print "Current version: %d" % current_version
 
     if current_version <= version:
@@ -341,13 +375,13 @@ def _ensure_db_no_higher_than(version):
     else:
         print "Rolling migrations back to version: ", version
 
-        invoke_command(command_down, target=version, skip_preview=True)
+        command_down({"<target>": version, "--skip_preview": True})
 
 
 def _delete_dbv(version):
-    print "Violently removing %s from database_versions table." % version
+    print "Violently removing %s from migrations table." % version
     with engine.begin() as conn:
-        conn.execute("""DELETE FROM database_versions
+        conn.execute("""DELETE FROM migrations
                         WHERE version = %s""",
                      version)
 
@@ -394,11 +428,6 @@ class MockArgs(object):
         return self._kwargs.get("target", None)
 
 
-def invoke_command(cmd, *args, **kwargs):
-    args = MockArgs(args, kwargs)
-    return cmd(args)
-
-
 def command_rebase(args):
     slug = args.slug
     print "Rebasing slug '%s'." % slug
@@ -408,18 +437,20 @@ def command_rebase(args):
 
     dupe_version = int(up_fn.split("/")[1].split(".")[0])
 
+    engine = get_engine(args)
+
     # Before we roll back the duplicated one, we need to
     # rollback any subsequent migrations that may have been
     # applied since the duplicate.  If there are any, this
     # will roll them back so that we are at the point where
     # the reality is that we should be using the new dupe
     # but we have our old dupe in the db.
-    _ensure_db_no_higher_than(dupe_version)
+    _ensure_db_no_higher_than(engine, dupe_version)
 
     # Now we manually bring down the live duplicate
-    invoke_command(command_apply, files=[down_fn])
+    command_apply({"<files>...": [down_fn]})
 
-    # then manually delete that version (eg. 53) from database_versions
+    # then manually delete that version (eg. 53) from the migrations table
     _delete_dbv(dupe_version)
 
     # now it's like that last one never happened, so we
@@ -429,84 +460,33 @@ def command_rebase(args):
     highest = get_highest_migration_num()
     rename_slug_to_version(up_fn, down_fn, slug, highest + 1)
 
-    invoke_command(command_up, skip_preview=True)
+    command_up({"--skip-preview": True})
 
     print "Rebase complete."
 
 
 def main():
-    # TODO: docopt
+    args = docopt(__doc__, version='migrate 2.0')
 
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(help="sub-command help")
+    if args.get("up"):
+        command_up(args)
+    elif args.get("down"):
+        command_down(args)
+    elif args.get("apply"):
+        command_apply(args)
+    elif args.get("make"):
+        command_make(args)
+    elif args.get("list"):
+        command_list(args)
+    elif args.get("status"):
+        command_status(args)
+    elif args.get("rebase"):
+        command_rebase(args)
+    elif args.get("wipe"):
+        command_wipe(args)
+    elif args.get("install"):
+        command_install(args)
 
-    parser_up = subparsers.add_parser("up", help="migrate up")
-    parser_up.add_argument("target", type=int, nargs="?")
-    parser_up.add_argument("-s", "--skip-preview", action="store_true")
-    parser_up.set_defaults(func=command_up)
 
-    parser_down = subparsers.add_parser("down", help="migrate down")
-    parser_down.add_argument("target", type=int, nargs="?")
-    parser_down.add_argument("-s", "--skip-preview", action="store_true")
-    parser_down.set_defaults(func=command_down)
-
-    parser_status = subparsers.add_parser("status",
-                                          help="show current status")
-    parser_status.set_defaults(func=command_status)
-
-    parser_install = subparsers.add_parser(
-        "install", help="install the database_versions table")
-    parser_install.set_defaults(func=command_install)
-
-    parser_list = subparsers.add_parser(
-        "list", help="list installed migrations")
-    parser_list.set_defaults(func=command_list)
-
-    parser_wipe = subparsers.add_parser("wipe", help="wipe a schema")
-    parser_wipe.add_argument("schema")
-    parser_wipe.set_defaults(func=command_wipe)
-
-    parser_run = subparsers.add_parser("apply",
-                                       help="apply specific SQL file(s).")
-    parser_run.add_argument("files", nargs="+")
-    parser_run.set_defaults(func=command_apply)
-
-    parser_run = subparsers.add_parser(
-        "make", help="make a set of new empty migrations")
-    parser_run.add_argument("slug")
-    parser_run.set_defaults(func=command_make)
-
-    parser_run = subparsers.add_parser(
-        "rebase", help="rebase a duplicate migration to the end.")
-    parser_run.add_argument("slug")
-    parser_run.set_defaults(func=command_rebase)
-
-    args = parser.parse_args()
-    args.func(args)
-
-"""
-Naval Fate.
-
-Usage:
-naval_fate ship new <name>...
-naval_fate ship <name> move <x> <y> [--speed=<kn>]
-naval_fate ship shoot <x> <y>
-naval_fate mine (set|remove) <x> <y> [--moored|--drifting]
-naval_fate -h | --help
-naval_fate --version
-
-Options:
--h --help     Show this screen.
---version     Show version.
---speed=<kn>  Speed in knots [default: 10].
---moored      Moored (anchored) mine.
---drifting    Drifting mine.
-"""
-from docopt import docopt
-
-def main():
-    args = docopt(__doc__, version='Naval Fate 2.0')
-
-    
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
