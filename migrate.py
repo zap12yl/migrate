@@ -35,10 +35,16 @@ from sqlalchemy import DDL
 NOT_EXIST_MSG = "relation \"public.migrations\" does not exist"
 
 
-def get_engine(args):
+def get_db_url(args):
     url = args["--db"]
     if url == "DATABASE_URL":
         url = os.environ["DATABASE_URL"]
+    return url
+
+
+def get_engine(args):
+    url = get_db_url(args)
+
     engine = create_engine(url)
     return engine
 
@@ -245,6 +251,7 @@ def preview(migration_list, down):
 
 
 def _command_migrate(engine, target_version, down, do_preview):
+    target_version = int(target_version) if target_version else 0
     migration_list = _get_migration_list(engine, target_version, down)
     if do_preview:
         if not preview(migration_list, down):
@@ -298,10 +305,13 @@ def command_list(args):
 
 def command_wipe(args):
     schema = args["<schema>"]
+    DB_URL = get_db_url(args)
     print "WARNING! GOING TO WIPE SCHEMA '%s' in DB: %s" % (schema, DB_URL)
     if "y" == (raw_input("Ok? [y/N] ") or "").strip().lower():
+        engine = get_engine(args)
         with engine.begin() as conn:
-            conn.execute("DROP SCHEMA IF EXISTS %s CASCADE", schema)
+            sql = "DROP SCHEMA IF EXISTS %s CASCADE" % schema
+            conn.execute(sql)
         print "Database wiped."
     else:
         print "No action taken."
@@ -466,7 +476,7 @@ def command_rebase(args):
 
 
 def main():
-    args = docopt(__doc__, version='migrate 2.0')
+    args = docopt(__doc__, version='migrate 0.0.1')
 
     if args.get("up"):
         command_up(args)
