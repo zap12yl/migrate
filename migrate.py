@@ -261,7 +261,10 @@ def _command_migrate(engine, target_version, down, do_preview):
 
 
 def command_up(args):
-    target_version = args["<target>"]
+    try:
+        target_version = args["<target>"]
+    except KeyError:
+        import ipdb; ipdb.set_trace()
     skip_preview = args.get("--skip-preview")
     engine = get_engine(args)
     _command_migrate(engine, target_version, False, not skip_preview)
@@ -336,6 +339,7 @@ def command_apply(args):
     for fn in fns:
         if not os.path.exists(fn):
             raise Exception("Specified file does not exist: %s" % fn)
+    engine = get_engine(args)
     with engine.begin() as conn:
         for fn in fns:
             print "Applying: %s" % fn
@@ -385,10 +389,14 @@ def _ensure_db_no_higher_than(engine, version):
     else:
         print "Rolling migrations back to version: ", version
 
-        command_down({"<target>": version, "--skip_preview": True})
+        command_down({
+            "<target>": version,
+            "--skip_preview": True,
+            "--db": args["--db"]
+        })
 
 
-def _delete_dbv(version):
+def _delete_dbv(engine, version):
     print "Violently removing %s from migrations table." % version
     with engine.begin() as conn:
         conn.execute("""DELETE FROM migrations
@@ -439,7 +447,7 @@ class MockArgs(object):
 
 
 def command_rebase(args):
-    slug = args.slug
+    slug = args["<slug>"]
     print "Rebasing slug '%s'." % slug
 
     up_fn, down_fn = [_find_migration_by_slug(slug, "up"),
@@ -458,10 +466,13 @@ def command_rebase(args):
     _ensure_db_no_higher_than(engine, dupe_version)
 
     # Now we manually bring down the live duplicate
-    command_apply({"<files>...": [down_fn]})
+    command_apply({
+        "<files>...": [down_fn],
+        "--db": args["--db"]
+    })
 
     # then manually delete that version (eg. 53) from the migrations table
-    _delete_dbv(dupe_version)
+    _delete_dbv(engine, dupe_version)
 
     # now it's like that last one never happened, so we
     # rename to 1 above the new highest
@@ -470,7 +481,11 @@ def command_rebase(args):
     highest = get_highest_migration_num()
     rename_slug_to_version(up_fn, down_fn, slug, highest + 1)
 
-    command_up({"--skip-preview": True})
+    command_up({
+        "<target>": None,
+        "--skip-preview": True,
+        "--db": args["--db"]
+    })
 
     print "Rebase complete."
 

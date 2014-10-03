@@ -86,43 +86,71 @@ This command will list the migrations that have been applie to the database.
 This command will create empty up and down migrations with the next number in the sequence:
 
     $ migrate make foo
-    $ cat migrations/3.foo.up.sql                                                                                                                                                                                                     ✹ ✭
+    $ cat migrations/3.foo.up.sql
     BEGIN;
 
     COMMIT;
-    cat migrations/3.foo.up.sql  0.00s user 0.00s system 82% cpu 0.003 total
-    (migrate)[john@maia:~/src/migrate on master]
-    % cat migrations/3.foo.down.sql                                                                                                                                                                                                   ✹ ✭
+    $ cat migrations/3.foo.down.sql
     BEGIN;
 
     COMMIT;
 
+### migrate wipe
 
-## Underconstruction
+This command will WIPE OUT THE ENTIRE SCHEMA you specify.  So use with caution:
 
-This README is under construction, but here are some quick and dirty notes:
+    $ migrate wipe snow
+    WARNING! GOING TO WIPE SCHEMA 'snow' in DB: postgresql://snow@localhost
+    Ok? [y/N] y
+    Database wiped.
 
-It is designed to assist with a specific type of database migration flow, to whit:
+### migrate rebase
 
-It is assumed you are working with git or a similar version control system and
-have a workflow that involves something like parallel feature branches.
+This command is for dealing with the situation where you are merging a feature
+branch and you find that the migration you have added on your branch conflicts
+with a migration that has made it into master before you have merged.
 
-You have a directory called "migrations" at the top level of your project.  In
-that directory, when you are working on a feature branch and want to add a new
-migration, you run something like this:
+For example, you might be working on a feature branch that was forked from
+master after migrations 1 & 2 have been applied as above.  In your branch you've
+created a new migration called 3.add_table_foo.{up,down}.sql.  In another branch
+another developer has created 3.add_table_bar.{up,down}.sql.  Unfortunately
+that developer has merged their code first, so when you pull you end up with
+both 3.add_table_foo.* and 3.add_table_bar.*.
 
-    $ migrate make add_created_at
+Leaving your migrations directory looking something like this:
 
-Which will create... well, I was going to say X.whatever files but it created
-N.whatever files, so TODO: rework this.
+    $ ls -1 migrations
+    1.first-example.down.sql
+    1.first-example.up.sql
+    2.add_password.down.sql
+    2.add_password.up.sql
+    3.add_table_bar.down.sql
+    3.add_table_bar.up.sql
+    3.add_table_foo.down.sql
+    3.add_table_foo.up.sql
 
-...
+With "3.add_table_foo.up.sql" applied to your database and
+"3.add_table_bar.up.sql" NOT applied.
 
-It's assumed that you are using postgres or some other database with
-transactional DDL.  If not, migrate may still work, but you're taking your life
-into your own hands.
+The solution to this is:
 
-In the meantime, once you have some migrations, you can use "migrate up" and
-"migrate down" to migrate all the way up to the latest version or all the way
-down to zero.  You can use "migrate up <target>" or "migrate down <target>" to
-migrate to a specific version.
+    $ migrate rebase add_table_foo
+    Rebasing slug 'add_table_foo'.
+    Current version: 3
+    Current version is already <= max version:  3
+    Applying: migrations/3.add_table_foo.down.sql
+    Violently removing 3 from migrations table.
+    Renaming migrations/3.add_table_foo.up.sql => migrations/4.add_table_foo.up.sql
+    Renaming migrations/3.add_table_foo.down.sql => migrations/4.add_table_foo.down.sql
+    SELECTED VERSION: 4
+    add_table_bar - up
+    add_table_foo - up
+    Rebase complete.
+
+which will migrate down your conflicting add_table_foo migration, then rename it
+to be 1 higher than the current higest migration, then applies all unapplied
+migrations which include the original conflicting (and currently missing)
+migration and any subsequently added ones from master followed by your new one.
+
+Assuming everything works at this point you can commit and merge your branch to
+master before some other jerk commits new and also conflicting migrations :)
