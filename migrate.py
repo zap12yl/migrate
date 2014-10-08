@@ -323,6 +323,8 @@ def command_wipe(args):
         with engine.begin() as conn:
             sql = "DROP SCHEMA IF EXISTS %s CASCADE" % schema
             conn.execute(sql)
+            sql = "DELETE FROM public.migrations"
+            conn.execute(sql)
         print "Database wiped."
     else:
         print "No action taken."
