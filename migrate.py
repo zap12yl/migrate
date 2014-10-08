@@ -34,6 +34,8 @@ from sqlalchemy import DDL
 
 NOT_EXIST_MSG = "relation \"public.migrations\" does not exist"
 
+PCT_RE = re.compile(r"%")
+
 
 def get_db_url(args):
     url = args["--db"]
@@ -104,6 +106,10 @@ def read_sqls(filename):
     return up_sql, down_sql
 
 
+def _escape_migration(migration):
+    return PCT_RE.sub("%%", migration)
+
+
 def _execute_migration(engine, version, filename, migration, down):
     assert filename.startswith(str(version) + ".")
 
@@ -133,7 +139,9 @@ def _execute_migration(engine, version, filename, migration, down):
 
         tag = filename_to_tag(filename)
 
-        conn.execute(DDL(migration))
+        escaped_migration = _escape_migration(migration)
+
+        conn.execute(DDL(escaped_migration))
         if down:
             conn.execute("""DELETE FROM public.migrations
                             WHERE version = %s

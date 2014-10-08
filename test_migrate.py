@@ -3,6 +3,7 @@ import glob
 from pytest import raises
 
 from migrate import _generate_migration_list
+from migrate import _escape_migration
 
 # Just to make the tests easier to read:
 UP = False
@@ -67,3 +68,8 @@ class TestMigrationsDirectory:
         down_numbers = map(f, down_fns)
         assert len(up_numbers) == len(frozenset(up_numbers))
         assert len(down_numbers) == len(frozenset(down_numbers))
+
+
+def test_escape_migration():
+    assert _escape_migration("foo % bar") == "foo %% bar"
+    assert _escape_migration("foo % bar % baz") == "foo %% bar %% baz"
