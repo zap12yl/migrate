@@ -176,7 +176,7 @@ def get_max_target():
 def get_current_version(engine):
     with engine.begin() as conn:
         rs = conn.execute("""SELECT MAX(version) AS version
-                             FROM migrations
+                             FROM public.migrations
                           """)
         row = list(rs)[0]
         return row.version or 0
@@ -333,7 +333,7 @@ def command_wipe(args):
 def command_status(args):
     try:
         with engine.begin() as conn:
-            sql = "SELECT * FROM migrations ORDER BY version"
+            sql = "SELECT * FROM public.migrations ORDER BY version"
             versions = list(conn.execute(sql))
     except Exception:
         print "Database versions table not installed."
