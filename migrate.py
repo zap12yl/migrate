@@ -409,7 +409,7 @@ def _ensure_db_no_higher_than(engine, version):
 def _delete_dbv(engine, version):
     print "Violently removing %s from migrations table." % version
     with engine.begin() as conn:
-        conn.execute("""DELETE FROM migrations
+        conn.execute("""DELETE FROM public.migrations
                         WHERE version = %s""",
                      version)
 
