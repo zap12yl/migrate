@@ -331,12 +331,16 @@ def command_wipe(args):
 
 
 def command_status(args):
+    engine = get_engine(args)
     try:
         with engine.begin() as conn:
             sql = "SELECT * FROM public.migrations ORDER BY version"
             versions = list(conn.execute(sql))
-    except Exception:
-        print "Database versions table not installed."
+    except Exception as ex:
+        print "There was a problem:"
+        print ex
+        print "Maybe the database versions table is not installed?"
+        print "(If thats the problem, try 'migrate install')."
     else:
         print ("Database versions table installed."
                " %d migrations installed." % len(versions))
