@@ -506,7 +506,7 @@ def command_rebase(args):
 
 
 def main():
-    args = docopt(__doc__, version='migrate 0.0.1')
+    args = docopt(__doc__, version='migrate 0.0.5')
 
     if args.get("up"):
         command_up(args)
