@@ -13,7 +13,7 @@ if __name__ == "__main__":
           license="MIT",
           url="https://github.com/lgastako/migrate",
           install_requires=[
-              "docopt",
+              "docopt>=0.6.2",
               "sqlalchemy",
           ],
           test_requires=[
