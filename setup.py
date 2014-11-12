@@ -8,9 +8,16 @@ if __name__ == "__main__":
     setup(name="migrate",
           version="0.0.2",
           description="Database Migration Assistant",
+          author="John Evans",
+          author_email="lgastako@gmail.com",
+          license="MIT",
           url="https://github.com/lgastako/migrate",
           install_requires=[
               "sqlalchemy",
+          ],
+          test_requires=[
+              "pytest",
+              "pytest-pep8"
           ],
           packages=find_packages(),
           provides=["migrate"],

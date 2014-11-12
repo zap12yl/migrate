@@ -17,6 +17,7 @@ migrate --version
 Options:
 -h --help          Show this screen.
 --version          Show version.
+
 -s --skip-preview  Skip the preview.
 --db=<url>         Specify DB url [default: DATABASE_URL].
 """
@@ -38,8 +39,8 @@ PCT_RE = re.compile(r"%")
 
 
 def get_db_url(args):
-    url = args["--db"]
-    if url == "DATABASE_URL":
+    url = args.get("--db")
+    if url == "DATABASE_URL" or not url:
         url = os.environ["DATABASE_URL"]
     return url
 
