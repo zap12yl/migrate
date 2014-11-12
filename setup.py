@@ -20,9 +20,9 @@ if __name__ == "__main__":
               "pytest-pep8"
           ],
           packages=find_packages(),
-          provides=["migrate"],
+          provides=["migrator"],
           entry_points={
               "console_scripts": [
-                  "migrate = migrate:main",
+                  "migrate = migrator:main",
               ]
           })
