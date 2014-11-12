@@ -1,8 +1,8 @@
-# migrate
+# migrator
 
-Migrate is a database migration assistant.
+Migrator is a database migration assistant.
 
-The migrate tool is designed to automate common tasks that are necessary when
+The tool is designed to automate common tasks that are necessary when
 maintaining your migrations as a sequentially numbered series of
 N.<description>.up.sql and N.<description>.down.sql files.
 
