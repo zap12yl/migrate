@@ -6,7 +6,7 @@ from setuptools import find_packages
 
 if __name__ == "__main__":
     setup(name="migrator",
-          version="0.0.6",
+          version="0.0.7",
           description="Database Migration Assistant",
           author="John Evans",
           author_email="lgastako@gmail.com",
