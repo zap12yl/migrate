@@ -350,7 +350,8 @@ def command_status(args):
 
 
 def command_apply(args):
-    fns = args["<files>..."]
+    import ipdb; ipdb.set_trace()
+    fns = args["<files>"]
     for fn in fns:
         if not os.path.exists(fn):
             raise Exception("Specified file does not exist: %s" % fn)
