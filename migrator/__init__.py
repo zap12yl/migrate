@@ -350,7 +350,6 @@ def command_status(args):
 
 
 def command_apply(args):
-    import ipdb; ipdb.set_trace()
     fns = args["<files>"]
     for fn in fns:
         if not os.path.exists(fn):
