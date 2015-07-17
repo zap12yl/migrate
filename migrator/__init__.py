@@ -23,15 +23,13 @@ Options:
 """
 from docopt import docopt
 
-import argparse
 import glob
 import os
 import re
 
-from functools import partial
-
 from sqlalchemy import create_engine
 from sqlalchemy import DDL
+from sqlalchemy.exc import SQLAlchemyError
 
 NOT_EXIST_MSG = "relation \"public.migrations\" does not exist"
 
@@ -119,7 +117,7 @@ def _execute_migration(engine, version, filename, migration, down):
             rs = conn.execute("""SELECT MAX(version) AS cur_ver
                                  FROM public.migrations
                               """)
-        except somesqlalchemy.Error as ex:
+        except SQLAlchemyError as ex:
             if NOT_EXIST_MSG in str(ex):
                 raise NoMigrationsTable
             else:
@@ -270,10 +268,7 @@ def _command_migrate(engine, target_version, down, do_preview):
 
 
 def command_up(args):
-    try:
-        target_version = args["<target>"]
-    except KeyError:
-        import ipdb; ipdb.set_trace()
+    target_version = args["<target>"]
     skip_preview = args.get("--skip-preview")
     engine = get_engine(args)
     _command_migrate(engine, target_version, False, not skip_preview)
@@ -395,7 +390,7 @@ def command_make(args):
         f.write(sql)
 
 
-def _ensure_db_no_higher_than(engine, version):
+def _ensure_db_no_higher_than(engine, version, db):
     current_version = get_current_version(engine)
     print "Current version: %d" % current_version
 
@@ -407,7 +402,7 @@ def _ensure_db_no_higher_than(engine, version):
         command_down({
             "<target>": version,
             "--skip_preview": True,
-            "--db": args["--db"]
+            "--db": db
         })
 
 
@@ -478,7 +473,7 @@ def command_rebase(args):
     # will roll them back so that we are at the point where
     # the reality is that we should be using the new dupe
     # but we have our old dupe in the db.
-    _ensure_db_no_higher_than(engine, dupe_version)
+    _ensure_db_no_higher_than(engine, dupe_version, args["--db"])
 
     # Now we manually bring down the live duplicate
     command_apply({
