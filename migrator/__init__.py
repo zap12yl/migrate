@@ -305,7 +305,7 @@ def command_install(args):
 def command_list(args):
     engine = get_engine(args)
     with engine.begin() as conn:
-        sql = "SELECT * FROM public.migrations"
+        sql = "SELECT * FROM public.migrations ORDER BY version ASC"
         versions = list(conn.execute(sql))
     if versions:
         print "Showing %d installed migration(s)." % len(versions)
