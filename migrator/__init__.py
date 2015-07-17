@@ -7,6 +7,7 @@ migrate down [<target>] [--skip-preview] [--db=<url>]
 migrate apply <files>... [--db=<url>]
 migrate make <slug> [--db=<url>]
 migrate list [--db=<url>]
+migrate plant <migrations>...
 migrate status [--db=<url>]
 migrate rebase <slug> [--db=<url>]
 migrate wipe <schema> [--db=<url>]
@@ -310,6 +311,32 @@ def command_list(args):
         print "No migrations installed."
 
 
+def load_plant(version):
+    filename = _find_migration(version, "up")
+    tag = filename_to_tag(filename)
+    if filename.startswith("migrations/"):
+        filename = filename[len("migrations/"):]
+        print filename
+    up_sql, down_sql = read_sqls(filename)
+    return tag, up_sql, down_sql
+
+
+def command_plant(args):
+    engine = get_engine(args)
+    with engine.begin() as conn:
+        for migration in args["<migrations>"]:
+            version = int(migration)
+            tag, up_sql, down_sql = load_plant(version)
+            conn.execute("""INSERT INTO public.migrations
+                                (version, tag, up_sql, down_sql)
+                            VALUES (%s, %s, %s, %s)
+                         """,
+                         version,
+                         tag,
+                         up_sql,
+                         down_sql)
+
+
 def command_wipe(args):
     schema = args["<schema>"]
     DB_URL = get_db_url(args)
@@ -513,6 +540,8 @@ def main():
         command_make(args)
     elif args.get("list"):
         command_list(args)
+    elif args.get("plant"):
+        command_plant(args)
     elif args.get("status"):
         command_status(args)
     elif args.get("rebase"):
