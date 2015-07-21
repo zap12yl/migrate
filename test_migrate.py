@@ -2,8 +2,8 @@ import glob
 
 from pytest import raises
 
-from migrate import _generate_migration_list
-from migrate import _escape_migration
+from migrator import _generate_migration_list
+from migrator import _escape_migration
 
 # Just to make the tests easier to read:
 UP = False

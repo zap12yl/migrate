@@ -7,6 +7,7 @@ migrate down [<target>] [--skip-preview] [--db=<url>]
 migrate apply <files>... [--db=<url>]
 migrate make <slug> [--db=<url>]
 migrate list [--db=<url>]
+migrate plant <migrations>...
 migrate status [--db=<url>]
 migrate rebase <slug> [--db=<url>]
 migrate wipe <schema> [--db=<url>]
@@ -23,15 +24,13 @@ Options:
 """
 from docopt import docopt
 
-import argparse
 import glob
 import os
 import re
 
-from functools import partial
-
 from sqlalchemy import create_engine
 from sqlalchemy import DDL
+from sqlalchemy.exc import SQLAlchemyError
 
 NOT_EXIST_MSG = "relation \"public.migrations\" does not exist"
 
@@ -119,7 +118,7 @@ def _execute_migration(engine, version, filename, migration, down):
             rs = conn.execute("""SELECT MAX(version) AS cur_ver
                                  FROM public.migrations
                               """)
-        except somesqlalchemy.Error as ex:
+        except SQLAlchemyError as ex:
             if NOT_EXIST_MSG in str(ex):
                 raise NoMigrationsTable
             else:
@@ -270,10 +269,7 @@ def _command_migrate(engine, target_version, down, do_preview):
 
 
 def command_up(args):
-    try:
-        target_version = args["<target>"]
-    except KeyError:
-        import ipdb; ipdb.set_trace()
+    target_version = args["<target>"]
     skip_preview = args.get("--skip-preview")
     engine = get_engine(args)
     _command_migrate(engine, target_version, False, not skip_preview)
@@ -313,6 +309,32 @@ def command_list(args):
             print "%d. %s" % (version.version, version.tag)
     else:
         print "No migrations installed."
+
+
+def load_plant(version):
+    filename = _find_migration(version, "up")
+    tag = filename_to_tag(filename)
+    if filename.startswith("migrations/"):
+        filename = filename[len("migrations/"):]
+        print filename
+    up_sql, down_sql = read_sqls(filename)
+    return tag, up_sql, down_sql
+
+
+def command_plant(args):
+    engine = get_engine(args)
+    with engine.begin() as conn:
+        for migration in args["<migrations>"]:
+            version = int(migration)
+            tag, up_sql, down_sql = load_plant(version)
+            conn.execute("""INSERT INTO public.migrations
+                                (version, tag, up_sql, down_sql)
+                            VALUES (%s, %s, %s, %s)
+                         """,
+                         version,
+                         tag,
+                         up_sql,
+                         down_sql)
 
 
 def command_wipe(args):
@@ -395,7 +417,7 @@ def command_make(args):
         f.write(sql)
 
 
-def _ensure_db_no_higher_than(engine, version):
+def _ensure_db_no_higher_than(engine, version, db):
     current_version = get_current_version(engine)
     print "Current version: %d" % current_version
 
@@ -407,7 +429,7 @@ def _ensure_db_no_higher_than(engine, version):
         command_down({
             "<target>": version,
             "--skip_preview": True,
-            "--db": args["--db"]
+            "--db": db
         })
 
 
@@ -478,7 +500,7 @@ def command_rebase(args):
     # will roll them back so that we are at the point where
     # the reality is that we should be using the new dupe
     # but we have our old dupe in the db.
-    _ensure_db_no_higher_than(engine, dupe_version)
+    _ensure_db_no_higher_than(engine, dupe_version, args["--db"])
 
     # Now we manually bring down the live duplicate
     command_apply({
@@ -518,6 +540,8 @@ def main():
         command_make(args)
     elif args.get("list"):
         command_list(args)
+    elif args.get("plant"):
+        command_plant(args)
     elif args.get("status"):
         command_status(args)
     elif args.get("rebase"):
